@@ -10,6 +10,7 @@ from .api.v1.routes import outputs as outputs_routes
 from .api.v1.routes import templates as templates_routes
 from .api.v1.routes import billing as billing_routes
 from .api.v1.routes import admin as admin_routes
+# from .api.v1.routes import transcription_projects as transcription_routes
 
 app = FastAPI(title="Repostr API", version="1.0")
 
@@ -36,6 +37,7 @@ app.include_router(outputs_routes.router)
 app.include_router(templates_routes.router)
 app.include_router(billing_routes.router)
 app.include_router(admin_routes.router)
+# app.include_router(transcription_routes.router)
 
 
 @app.get("/")
