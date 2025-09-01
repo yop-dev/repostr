@@ -18,6 +18,7 @@ The JWT token is obtained from Clerk authentication and should be included in al
 ## 📋 Table of Contents
 
 - [Authentication](#authentication-endpoints)
+- [Anonymous Upload](#anonymous-upload-endpoints)
 - [Users](#users-endpoints)
 - [Projects](#projects-endpoints)
 - [Files](#files-endpoints)
@@ -64,6 +65,264 @@ POST /auth/webhook
 ```json
 {
   "status": "processed"
+}
+```
+
+---
+
+## Anonymous Upload Endpoints
+
+**Note:** These endpoints allow file upload and transcription without authentication for "try for free" functionality.
+
+### Upload File Anonymously
+Upload an audio/video file without authentication and get a session token.
+
+```http
+POST /anonymous/upload
+```
+
+**Headers:**
+- `Content-Type: multipart/form-data`
+
+**Request Body (multipart/form-data):**
+- `file` (binary, required): The audio/video file to upload
+- `name` (string, required): Project name (1-100 characters)
+- `description` (string, optional): Project description (max 500 characters)
+- `language` (string, optional): Language code (ISO 639-1, default: "en")
+
+**File Limits:**
+- **Max size**: 10MB (smaller than authenticated users)
+- **Max duration**: 15 minutes
+- **Allowed formats**: `.mp3`, `.wav`, `.m4a`, `.aac`, `.ogg`
+
+**Rate Limits:**
+- **3 uploads per hour**
+- **5 uploads per day**
+
+**Response:** `200 OK`
+```json
+{
+  "session_token": "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz",
+  "project_id": "550e8400-e29b-41d4-a716-446655440000",
+  "file_name": "podcast_episode.mp3",
+  "file_size": 8388608,
+  "status": "processing",
+  "estimated_time_seconds": 45,
+  "expires_at": "2024-02-07T00:00:00Z",
+  "message": "File uploaded successfully. Processing will complete in approximately 45 seconds."
+}
+```
+
+**Error Responses:**
+```json
+// Rate limit exceeded
+{
+  "error": "rate_limit_exceeded",
+  "message": "Upload limit reached. Try again in 23 minutes or sign up for unlimited uploads.",
+  "retry_after": 1380,
+  "signup_suggestion": "Sign up for free to get unlimited uploads and advanced features!"
+}
+
+// File too large
+{
+  "error": "file_too_large",
+  "message": "File size exceeds 10MB limit for anonymous uploads.",
+  "details": {
+    "file_size_mb": 15.2,
+    "max_size_mb": 10
+  },
+  "signup_suggestion": "Sign up for free to upload files up to 25MB!"
+}
+```
+
+### Check Processing Status
+Check the processing status of an anonymous upload.
+
+```http
+GET /anonymous/{session_token}/status
+```
+
+**Path Parameters:**
+- `session_token` (string, required): The session token from upload response
+
+**Response:** `200 OK`
+```json
+{
+  "session_token": "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz",
+  "status": "processing",
+  "progress_percentage": 75,
+  "estimated_time_remaining": 12,
+  "file_name": "podcast_episode.mp3",
+  "file_size": 8388608,
+  "created_at": "2024-01-31T10:00:00Z",
+  "expires_at": "2024-02-07T10:00:00Z",
+  "is_expired": false,
+  "error_message": null
+}
+```
+
+**Status Values:**
+- `uploaded` - File uploaded, processing not started
+- `processing` - Transcription in progress
+- `completed` - Transcription completed, ready for viewing
+- `failed` - Processing failed
+- `claimed` - Session claimed by authenticated user
+
+### Get Transcription Results (Blurred)
+Get blurred transcription results that require signup to view fully.
+
+```http
+GET /anonymous/{session_token}
+```
+
+**Path Parameters:**
+- `session_token` (string, required): The session token from upload response
+
+**Response:** `200 OK`
+```json
+{
+  "session_token": "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz",
+  "status": "completed",
+  "transcription_preview": {
+    "preview_text": "Welcome to our podcast about AI and content creation. Today we're discussing how artificial intelligence is transforming the way creators produce and distribute content across multiple platforms...",
+    "total_word_count": 2847,
+    "duration_seconds": 1847.3,
+    "language": "en",
+    "confidence": 0.94,
+    "processing_time_ms": 15420
+  },
+  "is_blurred": true,
+  "signup_required": true,
+  "expires_at": "2024-02-07T10:00:00Z",
+  "conversion_message": "Your 31-minute audio has been transcribed into 2,847 words. Sign up free to view the complete transcription and unlock powerful repurposing features!",
+  "file_info": {
+    "file_name": "podcast_episode.mp3",
+    "file_size_mb": 8.0,
+    "duration_minutes": 30.8,
+    "estimated_reading_time": 9.2
+  },
+  "usage_stats": {
+    "total_users": "10,000+",
+    "files_processed_today": "247",
+    "average_satisfaction": "4.9/5",
+    "time_saved_hours": "15,000+"
+  }
+}
+```
+
+**Error Responses:**
+```json
+// Session not found
+{
+  "error": "session_not_found",
+  "message": "Session token not found or invalid.",
+  "signup_suggestion": "Sign up to create an account and manage your transcriptions!"
+}
+
+// Session expired
+{
+  "error": "session_expired",
+  "message": "This session has expired. Anonymous sessions are valid for 7 days.",
+  "signup_suggestion": "Sign up to keep your transcriptions forever!"
+}
+
+// Still processing
+{
+  "error": "still_processing",
+  "message": "Transcription is still being processed. Please check status endpoint.",
+  "session_token": "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz"
+}
+```
+
+### Claim Anonymous Session
+Associate an anonymous session with an authenticated user account.
+
+```http
+POST /anonymous/{session_token}/claim
+```
+
+**Headers:**
+- `Authorization: Bearer <token>` (required)
+
+**Path Parameters:**
+- `session_token` (string, required): The session token to claim
+
+**Request Body:**
+```json
+{}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "project_id": "550e8400-e29b-41d4-a716-446655440000",
+  "transcription_id": "cc0e8400-e29b-41d4-a716-446655440007",
+  "full_content": "Welcome to our podcast about AI and content creation. Today we're discussing how artificial intelligence is transforming the way creators produce and distribute content across multiple platforms. [... full transcription content ...]",
+  "claimed_at": "2024-01-31T10:30:00Z",
+  "error": null,
+  "project_data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "user_id": "user_2abcdef123456",
+    "title": "My Podcast Episode",
+    "description": "Episode about AI and content creation",
+    "created_at": "2024-01-31T10:00:00Z",
+    "updated_at": "2024-01-31T10:30:00Z"
+  },
+  "transcription_data": {
+    "id": "cc0e8400-e29b-41d4-a716-446655440007",
+    "content": "[full content]",
+    "word_count": 2847,
+    "duration_seconds": 1847.3,
+    "confidence": 0.94,
+    "language": "en",
+    "provider": "groq",
+    "created_at": "2024-01-31T10:15:00Z"
+  }
+}
+```
+
+**Error Responses:**
+```json
+// Session already claimed
+{
+  "success": false,
+  "error": "already_claimed",
+  "message": "This session has already been claimed by another user."
+}
+
+// Session expired
+{
+  "success": false,
+  "error": "session_expired",
+  "message": "This session has expired and cannot be claimed."
+}
+
+// Session not found
+{
+  "success": false,
+  "error": "session_not_found",
+  "message": "Session token not found or invalid."
+}
+```
+
+### Get Rate Limit Info
+Check current rate limit status for anonymous uploads.
+
+```http
+GET /anonymous/rate-limit
+```
+
+**Response:** `200 OK`
+```json
+{
+  "uploads_used_hour": 2,
+  "uploads_used_day": 4,
+  "uploads_remaining_hour": 1,
+  "uploads_remaining_day": 1,
+  "reset_time_hour": "2024-01-31T11:00:00Z",
+  "reset_time_day": "2024-02-01T00:00:00Z",
+  "is_limited": false
 }
 ```
 

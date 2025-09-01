@@ -88,7 +88,8 @@ Content repurposing projects created by users.
 | Column | Type | Constraints | Description |
 |--------|------|------------|-------------|
 | `id` | `UUID` | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique project identifier |
-| `user_id` | `TEXT` | NOT NULL | Clerk user ID (owner) |
+| `user_id` | `TEXT` | NULL | Clerk user ID (owner, null for anonymous) |
+| `anonymous_session_id` | `UUID` | NULL, REFERENCES anonymous_sessions(id) | Anonymous session reference |
 | `title` | `TEXT` | NOT NULL | Project title |
 | `description` | `TEXT` | NULL | Project description |
 | `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | Creation timestamp |
@@ -97,16 +98,19 @@ Content repurposing projects created by users.
 **Indexes:**
 - Primary key on `id`
 - Composite index on `(user_id, created_at DESC)` for user's projects listing
+- Index on `anonymous_session_id` for anonymous project lookups
 
 **Triggers:**
 - `trg_projects_updated_at` - Auto-updates `updated_at` on row modification
 
 **RLS Policies:**
-- `projects_owner_all` - Users have full access to their own projects only
+- `projects_owner_all` - Users have full access to their own projects and anonymous projects
+- `projects_service_role_all` - Service role has full access for backend operations
 
 **Relationships:**
 - One-to-many with `files` (project has many files)
 - One-to-many with `outputs` (project has many outputs)
+- One-to-one with `anonymous_sessions` (anonymous project belongs to one session)
 
 **Example Data:**
 ```json
@@ -130,7 +134,7 @@ Uploaded media files associated with projects.
 | `id` | `UUID` | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique file identifier |
 | `user_id` | `TEXT` | NOT NULL | Clerk user ID (owner) |
 | `project_id` | `UUID` | NOT NULL, REFERENCES projects(id) ON DELETE CASCADE | Associated project |
-| `path` | `TEXT` | NOT NULL, UNIQUE | Storage path: `{user_id}/{project_id}/{uuid.ext}` |
+| `path` | `TEXT` | NOT NULL, UNIQUE | Storage path: `{user_id}/{project_id}/{uuid.ext}` or `anonymous/{token}/{file}` |
 | `mime_type` | `TEXT` | NULL | MIME type (e.g., "audio/mp3") |
 | `size_bytes` | `BIGINT` | NULL | File size in bytes |
 | `public_url` | `TEXT` | NULL | Public URL for file access |
@@ -231,7 +235,150 @@ queued → processing → completed
 
 ---
 
-### 5. **templates**
+### 5. **transcriptions**
+Store transcription results from audio/video processing services.
+
+| Column | Type | Constraints | Description |
+|--------|------|------------|-------------|
+| `id` | `UUID` | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique transcription identifier |
+| `file_id` | `UUID` | REFERENCES files(id) ON DELETE CASCADE | Associated file |
+| `user_id` | `TEXT` | NULL | Clerk user ID (owner, null for anonymous) |
+| `anonymous_session_id` | `UUID` | NULL, REFERENCES anonymous_sessions(id) | Anonymous session reference |
+| `content` | `TEXT` | NOT NULL | Full transcription text |
+| `language` | `TEXT` | DEFAULT 'en' | Language code (ISO 639-1) |
+| `duration_seconds` | `FLOAT` | NULL | Audio duration in seconds |
+| `word_count` | `INTEGER` | NULL | Number of words in transcription |
+| `confidence` | `FLOAT` | NULL | Overall confidence score (0-1) |
+| `segments` | `JSONB` | NULL | Detailed segments with timestamps |
+| `provider` | `TEXT` | DEFAULT 'groq' | Service provider (groq, openai, local) |
+| `processing_time_ms` | `INTEGER` | NULL | Processing time in milliseconds |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | Creation timestamp |
+
+**Indexes:**
+- Primary key on `id`
+- Index on `file_id` for file-based lookups
+- Index on `user_id` for user's transcriptions
+- Index on `anonymous_session_id` for anonymous transcription lookups
+
+**RLS Policies:**
+- `transcriptions_owner_all` - Users have full access to their own transcriptions and anonymous transcriptions
+- `transcriptions_service_role_all` - Service role has full access for backend operations
+
+**Relationships:**
+- Many-to-one with `files` (transcription belongs to one file)
+- One-to-one with `anonymous_sessions` (anonymous transcription belongs to one session)
+
+**Segments Structure:**
+```json
+{
+  "segments": [
+    {
+      "id": 0,
+      "start": 0.0,
+      "end": 3.44,
+      "text": "Hello and welcome to our podcast.",
+      "tokens": [50364, 2425, 293, 2928, 281, 527, 7367, 13, 50538],
+      "temperature": 0.0,
+      "avg_logprob": -0.15,
+      "compression_ratio": 1.2,
+      "no_speech_prob": 0.01
+    }
+  ]
+}
+```
+
+**Example Data:**
+```json
+{
+  "id": "cc0e8400-e29b-41d4-a716-446655440007",
+  "file_id": "bb0e8400-e29b-41d4-a716-446655440006",
+  "user_id": null,
+  "anonymous_session_id": "990e8400-e29b-41d4-a716-446655440004",
+  "content": "Hello and welcome to our podcast. Today we're discussing AI and content creation...",
+  "language": "en",
+  "duration_seconds": 1847.3,
+  "word_count": 2156,
+  "confidence": 0.94,
+  "segments": [...],
+  "provider": "groq",
+  "processing_time_ms": 15420,
+  "created_at": "2024-01-31T00:15:00Z"
+}
+```
+
+---
+
+### 6. **anonymous_sessions**
+Anonymous upload sessions for "try for free" feature before user signup.
+
+| Column | Type | Constraints | Description |
+|--------|------|------------|-------------|
+| `id` | `UUID` | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique session identifier |
+| `session_token` | `TEXT` | NOT NULL, UNIQUE | Secure token for session access |
+| `project_id` | `UUID` | REFERENCES projects(id) ON DELETE CASCADE | Associated project |
+| `transcription_id` | `UUID` | REFERENCES transcriptions(id) ON DELETE CASCADE | Associated transcription |
+| `file_name` | `TEXT` | NOT NULL | Original uploaded file name |
+| `file_size` | `BIGINT` | NOT NULL | File size in bytes |
+| `storage_path` | `TEXT` | NOT NULL | Storage path in Supabase |
+| `status` | `TEXT` | DEFAULT 'uploaded', CHECK constraint | Session status |
+| `ip_address` | `INET` | NULL | Client IP address for analytics |
+| `user_agent` | `TEXT` | NULL | Client user agent |
+| `expires_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() + 7 days | Session expiration |
+| `claimed_by_user_id` | `TEXT` | NULL | User ID when session is claimed |
+| `claimed_at` | `TIMESTAMPTZ` | NULL | When session was claimed |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | Creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | NOT NULL, DEFAULT NOW() | Last update timestamp |
+
+**Indexes:**
+- Primary key on `id`
+- Unique constraint on `session_token`
+- Index on `expires_at` for cleanup queries
+- Index on `status` for status filtering
+- Partial index on `expires_at` for unclaimed sessions
+
+**Triggers:**
+- `trg_anonymous_sessions_updated_at` - Auto-updates `updated_at` on row modification
+
+**RLS Policies:**
+- `anonymous_sessions_token_access` - Anonymous users can read sessions
+- `anonymous_sessions_service_role_all` - Service role has full access
+- `anonymous_sessions_user_claim` - Authenticated users can claim sessions
+
+**Status Values:**
+- `uploaded` - File uploaded, processing not started
+- `processing` - Transcription in progress
+- `completed` - Transcription completed, ready for viewing
+- `failed` - Processing failed
+- `claimed` - Session claimed by authenticated user
+
+**Relationships:**
+- One-to-one with `projects` (anonymous session has one project)
+- One-to-one with `transcriptions` (anonymous session has one transcription)
+
+**Example Data:**
+```json
+{
+  "id": "990e8400-e29b-41d4-a716-446655440004",
+  "session_token": "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz",
+  "project_id": "aa0e8400-e29b-41d4-a716-446655440005",
+  "transcription_id": "bb0e8400-e29b-41d4-a716-446655440006",
+  "file_name": "podcast_episode.mp3",
+  "file_size": 15728640,
+  "storage_path": "anonymous/abc123def456/podcast_episode.mp3",
+  "status": "completed",
+  "ip_address": "192.168.1.100",
+  "user_agent": "Mozilla/5.0...",
+  "expires_at": "2024-02-07T00:00:00Z",
+  "claimed_by_user_id": null,
+  "claimed_at": null,
+  "created_at": "2024-01-31T00:00:00Z",
+  "updated_at": "2024-01-31T00:30:00Z"
+}
+```
+
+---
+
+### 7. **templates**
 Custom content generation templates created by users.
 
 | Column | Type | Constraints | Description |
@@ -285,6 +432,12 @@ Custom content generation templates created by users.
 
 **Storage Policies:**
 - `Public read uploads` - Allows public SELECT on all objects in the bucket
+- `Users can upload to own folder` - Authenticated users can upload to their folder
+- `Users can view own files` - Authenticated users can view their files
+- `Users can delete own files` - Authenticated users can delete their files
+- `Anonymous uploads allowed` - Anonymous users can upload to anonymous folder
+- `Anonymous can read own uploads` - Anonymous users can read their uploads
+- `Service role can manage anonymous files` - Backend can manage anonymous files
 
 **Example Paths:**
 ```
@@ -540,11 +693,10 @@ ORDER BY date DESC;
 ## 📝 Notes
 
 ### Future Enhancements
-1. **Transcriptions table** - Store transcription data separately
-2. **Clips table** - Video clip suggestions and exports
-3. **Billing tables** - Subscription and usage tracking
-4. **Analytics tables** - User behavior and content performance
-5. **Team collaboration** - Shared projects and permissions
+1. **Clips table** - Video clip suggestions and exports
+2. **Billing tables** - Subscription and usage tracking
+3. **Analytics tables** - User behavior and content performance
+4. **Team collaboration** - Shared projects and permissions
 
 ### Best Practices
 - Always use prepared statements to prevent SQL injection
