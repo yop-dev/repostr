@@ -13,7 +13,14 @@ from loguru import logger
 
 from app.core.config import settings
 from app.services.transcription.groq_service import GroqTranscriptionService
-from app.services.transcription.audio_utils import AudioProcessor
+try:
+    from app.services.transcription.audio_utils import AudioProcessor
+except (ImportError, ModuleNotFoundError):
+    # Fallback for Python 3.13+ where pydub doesn't work
+    try:
+        from app.services.transcription.audio_utils_minimal import AudioProcessor
+    except ImportError:
+        from app.services.transcription.audio_utils_stub import AudioProcessor
 
 
 class TranscriptionProvider(str, Enum):
@@ -87,13 +94,29 @@ class TranscriptionManager:
             # Check rate limits
             await self._check_rate_limit()
             
-            # Get file info
-            file_info = self.audio_processor.get_audio_info(file_path)
-            logger.info(f"Starting transcription for {file_path}")
-            logger.info(f"File info: {file_info['duration']:.1f}s, {file_info['size_mb']:.2f}MB")
-            
-            # Prepare file (handle compression/chunking if needed)
-            files_to_process, needs_merging = await self.audio_processor.prepare_file_for_transcription(file_path)
+            # Get file info (fallback if FFmpeg not available)
+            try:
+                file_info = self.audio_processor.get_audio_info(file_path)
+                logger.info(f"Starting transcription for {file_path}")
+                logger.info(f"File info: {file_info['duration']:.1f}s, {file_info['size_mb']:.2f}MB")
+                
+                # Prepare file (handle compression/chunking if needed)
+                files_to_process, needs_merging = await self.audio_processor.prepare_file_for_transcription(file_path)
+            except FileNotFoundError as e:
+                if 'ffprobe' in str(e) or 'ffmpeg' in str(e):
+                    logger.warning("FFmpeg not available, using direct transcription")
+                    # Fallback: use file directly without processing
+                    file_size = Path(file_path).stat().st_size
+                    file_info = {
+                        'duration': 0,  # Unknown duration
+                        'size_mb': file_size / (1024 * 1024),
+                        'format': Path(file_path).suffix.lower()
+                    }
+                    files_to_process = [file_path]
+                    needs_merging = False
+                    logger.info(f"Starting direct transcription for {file_path} ({file_info['size_mb']:.2f}MB)")
+                else:
+                    raise
             
             # Process transcription
             if needs_merging:

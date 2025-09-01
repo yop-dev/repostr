@@ -23,7 +23,7 @@ class AudioProcessor:
     def __init__(self):
         """Initialize audio processor with configuration."""
         self.max_file_size_mb = settings.MAX_AUDIO_FILE_SIZE_MB
-        self.max_chunk_duration_seconds = settings.MAX_AUDIO_CHUNK_DURATION_MINUTES * 60
+        self.max_chunk_duration_seconds = settings.AUDIO_CHUNK_DURATION_SECONDS
         self.supported_formats = {'.mp3', '.wav', '.m4a', '.mp4', '.mpeg', '.mpga', '.webm', '.ogg'}
         
     def get_audio_info(self, file_path: str) -> dict:
