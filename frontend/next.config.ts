@@ -14,10 +14,8 @@ const nextConfig: NextConfig = {
     }
     return [];
   },
-  // Enable experimental features if needed
-  experimental: {
-    serverComponentsExternalPackages: ['@clerk/nextjs'],
-  },
+  // Updated configuration for Next.js 15
+  serverExternalPackages: ['@clerk/nextjs'],
 };
 
 export default nextConfig;
