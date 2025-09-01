@@ -68,7 +68,7 @@ export default function DashboardPage() {
   const loadProjects = async () => {
     try {
       setLoading(true);
-      const projectsData = await api.getProjects();
+      const projectsData = await api.getProjects() as Project[];
       setProjects(projectsData);
       
       // Auto-select first project if available
@@ -85,14 +85,20 @@ export default function DashboardPage() {
   const loadTranscriptions = async (projectId: string) => {
     try {
       setTranscriptionsLoading(true);
-      // Check if transcription endpoints are available
-      if (typeof api.getProjectTranscriptions === 'function') {
-        const transcriptionsData = await api.getProjectTranscriptions(projectId);
-        setTranscriptions(transcriptionsData);
-      } else {
-        console.log('Transcription endpoints not available yet');
-        setTranscriptions([]);
-      }
+      // Use files endpoint for now - in the future this would be a dedicated transcriptions endpoint
+      const filesData = await api.getFiles(projectId) as any[];
+      // Transform files data to transcriptions format if needed
+      const transcriptionsData = filesData.map(file => ({
+        id: file.id,
+        filename: file.name || file.filename,
+        status: file.transcription_status || 'pending',
+        text: file.transcription_text,
+        duration: file.duration,
+        created_at: file.created_at,
+        updated_at: file.updated_at,
+        error_message: file.error_message
+      })) as Transcription[];
+      setTranscriptions(transcriptionsData);
     } catch (error) {
       console.error('Failed to load transcriptions:', error);
       setTranscriptions([]);

@@ -46,12 +46,27 @@ function Button({
     asChild?: boolean
   }) {
   const Comp = asChild ? Slot : "button"
+  
+  // Filter out non-DOM props that might be passed down from parent components
+  const {
+    afterSignUpUrl,
+    afterSignInUrl,
+    fallbackRedirectUrl,
+    forceRedirectUrl,
+    redirectUrl,
+    signInForceRedirectUrl,
+    signInFallbackRedirectUrl,
+    signUpForceRedirectUrl,
+    signUpFallbackRedirectUrl,
+    mode,
+    ...domProps
+  } = props as any;
 
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
+      {...domProps}
     />
   )
 }
