@@ -14,8 +14,6 @@ const nextConfig: NextConfig = {
     }
     return [];
   },
-  // Updated configuration for Next.js 15
-  serverExternalPackages: ['@clerk/nextjs'],
 };
 
 export default nextConfig;
