@@ -101,7 +101,18 @@ export default function Home() {
               <Button 
                 asChild 
                 variant="outline" 
-                className="border-gray-300 text-black hover:bg-gray-50 rounded-full px-6 sm:px-8 md:px-10 py-4 md:py-5 text-base md:text-lg font-medium flex items-center justify-center h-auto w-full sm:w-auto"
+                className="border-2 border-blue-500 text-blue-600 hover:bg-blue-50 rounded-full px-6 sm:px-8 md:px-10 py-4 md:py-5 text-base md:text-lg font-medium flex items-center justify-center h-auto w-full sm:w-auto relative overflow-hidden group"
+              >
+                <Link href="/try-free" className="flex items-center">
+                  <Sparkles className="w-4 h-4 mr-2 group-hover:animate-pulse" />
+                  Try Free - No Signup
+                  <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </Button>
+              <Button 
+                asChild 
+                variant="ghost" 
+                className="text-gray-600 hover:text-black hover:bg-gray-50 rounded-full px-6 sm:px-8 md:px-10 py-4 md:py-5 text-base md:text-lg font-medium flex items-center justify-center h-auto w-full sm:w-auto"
               >
                 <Link href="#pricing" className="flex items-center">
                   View Pricing
